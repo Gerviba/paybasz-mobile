@@ -1,0 +1,217 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/thymeleaf-extras-springsecurity3"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link href="../../static/mobile/style.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <title>paybasz mobil terminál</title>
+
+    <style>
+        body {
+            background-color: #000;
+            color: #FFFFFF;
+            text-align: center;
+            font-family: sans-serif;
+        }
+        button {
+            background-color: #444444;
+            border: 2px solid #FFFFFF;
+            color: #FFFFFF;
+            font-size: 28px;
+            margin: 10px 20px;
+            width: 80%;
+        }
+        h1 {
+            text-shadow: 2px 2px 0 #000000;
+        }
+        h3, h4 {
+            font-size: 32px;
+            text-shadow: 2px 2px 0 #000000;
+        }
+    </style>
+</head>
+<body id="box">
+
+<div class="menu">
+
+    <h1>pay<sub>basz</sub></h1>
+
+    <button onclick="initNFC()" id="nfcButton">NFC OFF</button><br>
+    <button onclick="initReading()">BEOLVAS</button><br>
+    <button onclick="initBalance()">EGYENLEG</button><br>
+    <button onclick="initPay()">FIZETÉS</button><br>
+    <button onclick="initOk()">OK</button>
+
+    <div class="result">
+        <h3 id="scan-line1">...</h3>
+        <h4 id="scan-line2"></h4>
+        <h4 id="scan-line3"></h4>
+        <h4 id="scan-line4"></h4>
+    </div>
+
+</div>
+
+<script>
+    const gatewayName = "mobile1";
+    const token = "letmein";
+    const baseUrl = "https://192.168.0.60:6006/api/v2";
+    //const baseUrl = "https://httpbin.org/post";
+    let nfcListener = async function(card) {};
+
+    async function test() {
+        const id = "idd";
+        const hashed = "xdd";
+        await httpFetchData('POST', baseUrl + '/reading/' + gatewayName, { card: hashed, gatewayCode: token })
+            .then(data => {
+                displayText(id, hashed, data);
+            })
+            .catch((error) => {
+                displayText("error", hashed, error);
+                console.error('Error:', error);
+            });
+    }
+
+    function initNFC() {
+        setBackground("#000000");
+        displayText('NFC: ON');
+        try {
+            const ndef = new NDEFReader();
+            ndef.scan();
+            document.getElementById('nfcButton').innerText = "NFC ON";
+
+            ndef.addEventListener("readingerror", () => {
+                displayText('Hiba történt');
+            });
+
+            ndef.addEventListener("reading", async ({ message, serialNumber }) => {
+                const id = serialNumber.toUpperCase().replaceAll(':', '-');
+                const hashed = await sha256(id);
+
+                //displayText(id, hashed, baseUrl + '/reading/' + gatewayName, JSON.stringify({ card: hashed, gatewayCode: token }));
+
+                await nfcListener(hashed);
+            });
+        } catch (error) {
+            displayText('Hiba: ' + error);
+        }
+    }
+
+    function initReading() {
+        setBackground("#000000");
+        displayText("KÁRTYA BEOLVASÁSA");
+
+        nfcListener = async function(hashed) {
+            await httpFetchData('POST', baseUrl + '/reading/' + gatewayName, { card: hashed, gatewayCode: token })
+                .then(data => {
+                    displayText("SIKERES", hashed, data);
+                    nfcListener = async function(x) {};
+                })
+                .catch((error) => {
+                    displayText("HIBA", hashed, error);
+                    console.error('Error:', error);
+                    nfcListener = async function(x) {};
+                });
+        }
+    }
+
+    function initBalance() {
+        setBackground("#000000");
+        displayText("EGYENLEG LEKÉRÉSE");
+
+        nfcListener = async function(hashed) {
+            await httpFetchData('POST', baseUrl + '/balance/' + gatewayName, { card: hashed, gatewayCode: token })
+                .then(data => {
+                    displayText("EGYENLEG", hashed, data);
+                    nfcListener = async function(x) {};
+                })
+                .catch((error) => {
+                    displayText("HIBA", hashed, error);
+                    console.error('Error:', error);
+                    nfcListener = async function(x) {};
+                });
+        }
+    }
+
+    function initPay() {
+        setBackground("#000000");
+        displayText("FIZETÉS");
+        let text;
+        let money = prompt("Végösszeg [JMF]", "");
+        if (money == null || money == "") {
+            displayText("FIZETÉS", "megszakítva");
+            return;
+        } else if (parseInt(money) != NaN) {
+            displayText("FIZETENDŐ ÖSSZEG", money);
+            nfcListener = async function(hashed) {
+                await httpFetchData('POST', baseUrl + '/pay/' + gatewayName, { card: hashed, amount: parseInt(money), gatewayCode: token, details: money })
+                    .then(data => {
+                        if (data === "ACCEPTED") {
+                            setBackground("#00FF00");
+                        } else {
+                            setBackground("#FF0000");
+                        }
+                        displayText("FIZETÉS", "státusz:", data);
+                        nfcListener = async function(x) {
+                            displayText("FIZETÉS", "(új beolvasás, de nem új fizetés)", data);
+                        };
+                    })
+                    .catch((error) => {
+                        setBackground("#FF0000");
+                        displayText("HIBA", hashed, error);
+                        console.error('Error:', error);
+                        nfcListener = async function(x) {};
+                    });
+            }
+        } else {
+            displayText("FIZETÉS", "hibás formátum", money);
+        }
+
+    }
+
+    function initOk() {
+        setBackground("#000000");
+        displayText("...");
+        nfcListener = async function(x) { };
+    }
+
+    function setBackground(color) {
+        document.getElementById('box').style.backgroundColor = color;
+    }
+
+    function displayText(line1, line2="", line3="", line4="") {
+        document.getElementById('scan-line1').innerText = line1;
+        document.getElementById('scan-line2').innerText = line2;
+        document.getElementById('scan-line3').innerText = line3;
+        document.getElementById('scan-line4').innerText = line4;
+    }
+
+    async function sha256(message) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex.toUpperCase();
+    }
+
+    async function httpFetchData(method = 'POST', url = '', data = {}) {
+        const response = await fetch(url, {
+            method: method,
+            mode: 'cors',
+            cache: 'no-cache',
+            headers: {
+                'Content-Type': 'application/json;charset=UTF-8'
+            },
+            body: JSON.stringify(data)
+        });
+        return response.text();
+    }
+</script>
+</body>
+</html>

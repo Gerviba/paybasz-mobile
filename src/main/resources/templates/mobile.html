@@ -58,11 +58,10 @@
 
 </div>
 
-<script>
-    const gatewayName = "mobile1";
-    const token = "letmein";
+<script th:inline="javascript">
+    const gatewayName = /*[[${gatewayName}]]*/ "mobilGw";
+    const token = /*[[${token}]]*/ "token";
     const baseUrl = "https://192.168.0.60:6006/api/v2";
-    //const baseUrl = "https://httpbin.org/post";
     let nfcListener = async function(card) {};
 
     async function test() {
